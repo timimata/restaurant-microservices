@@ -1,0 +1,2 @@
+ALTER TABLE reservations
+    ADD COLUMN slot_time TIMESTAMP NOT NULL DEFAULT NOW();
