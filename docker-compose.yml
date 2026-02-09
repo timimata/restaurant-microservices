@@ -1,0 +1,114 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      # opcional (debug):
+      # - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # 2 listeners: interno (docker) + externo (host)
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    restart: unless-stopped
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+      - zookeeper
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    restart: unless-stopped
+
+  postgres-restaurant:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: restaurantdb
+      POSTGRES_USER: restaurant
+      POSTGRES_PASSWORD: restaurant
+    restart: unless-stopped
+
+  postgres-reservation:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: reservationdb
+      POSTGRES_USER: reservation
+      POSTGRES_PASSWORD: reservation
+    restart: unless-stopped
+
+  postgres-notification:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: notificationdb
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: notification
+    restart: unless-stopped
+
+  restaurant-service:
+    build: ./restaurant-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres-restaurant
+      - kafka
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-restaurant:5432/restaurantdb
+      SPRING_DATASOURCE_USERNAME: restaurant
+      SPRING_DATASOURCE_PASSWORD: restaurant
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    restart: unless-stopped
+
+  reservation-service:
+    # ⚠️ confirma se a pasta é mesmo reservation-Service (maiúscula)
+    build: ./reservation-Service
+    ports:
+      - "8082:8082"
+    depends_on:
+      - postgres-reservation
+      - kafka
+      - restaurant-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-reservation:5432/reservationdb
+      SPRING_DATASOURCE_USERNAME: reservation
+      SPRING_DATASOURCE_PASSWORD: reservation
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVICES_RESTAURANT_BASE_URL: http://restaurant-service:8081
+    restart: unless-stopped
+
+  notification-service:
+    # ⚠️ confirma se a pasta é mesmo notification-Service (maiúscula)
+    build: ./notification-Service
+    ports:
+      - "8083:8083"
+    depends_on:
+      - postgres-notification
+      - kafka
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-notification:5432/notificationdb
+      SPRING_DATASOURCE_USERNAME: notification
+      SPRING_DATASOURCE_PASSWORD: notification
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    restart: unless-stopped
